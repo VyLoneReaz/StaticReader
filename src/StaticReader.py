@@ -110,6 +110,7 @@ def main(page: Page) -> None:
             return
 
         try:
+            stop_reader(e)
             text = import_file(e.files[0].path)
             words = text.split()
             word_index = 0
@@ -200,7 +201,7 @@ def main(page: Page) -> None:
         playsound(sfx_button_stop_click, False)
 
         is_active = False
-        
+
         page.update()
 
     # ------------------------------
@@ -216,6 +217,15 @@ def main(page: Page) -> None:
                 stop_reader(ke)
             else:
                 start_reader(ke)
+        elif ke.key.lower() == "i":
+            file_picker.pick_files(
+            allow_multiple=False,
+            allowed_extensions=["txt", "docx"],
+        )
+        elif ke.key.lower() == "s":
+            adjust_use_smart_pace_state(ke, not use_smart_pacing)
+        elif ke.key.lower() == "r":
+            reset_reader(ke)
         else:
             # print(f"UNSIGNED KEY: {ke.key}")
             pass
@@ -289,13 +299,14 @@ def main(page: Page) -> None:
     def playsound_btn_stop_hover(e) -> None:
         playsound(sfx_button_hover, False)
 
-    def adjust_use_smart_pace_state(e) -> None:
+    def adjust_use_smart_pace_state(e, *args) -> None:
         nonlocal switch_smart_pacing, use_smart_pacing, label_smart_pacing
 
-        switch_state = None
+        if args:
+            switch_smart_pacing.value = args[0]
+
         if switch_smart_pacing:
-            switch_state = switch_smart_pacing.value
-            use_smart_pacing = switch_state
+            use_smart_pacing = switch_smart_pacing.value
             # print(f"Using Smart Pacing : {use_smart_pacing}")
 
             """
