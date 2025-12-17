@@ -7,6 +7,7 @@ from flet import (
     Row,
     TextField,
     Text,
+    Switch,
     ElevatedButton,
     FilePicker,
     KeyboardEvent,
@@ -19,25 +20,36 @@ def main(page: Page) -> None:
     # -----------------------------
     # App State
     # -----------------------------
-    wpm = 100
     words: list[str] = []
     word_index = 0
     is_active = False
     is_file_valid = False
 
     # -----------------------------
+    # Reading Speed [WPM] (Properties)
+    # -----------------------------
+    wpm = 60
+    lower_limit = 1
+    upper_limit = 1000
+
+    # -----------------------------
+    # Smart Pacing
+    # -----------------------------
+    use_smart_pacing = True
+    base_delay = 60 / wpm
+    word = None
+    word_length = None
+
+    # -----------------------------
     # SFX - AUDIO
     # -----------------------------
-    sfx_word_appear = Path("assets/audio/Word_Appear_SFX/TOON_Pop.wav")
-    sfx_button_hover = Path("assets/audio/Button_SFX/Hover/Bonk Hover A.wav")
-    sfx_button_start_click = Path(
-        "assets/audio/Button_SFX/Click/Light Click A_Start.wav"
-    )
-    sfx_button_stop_click = Path("assets/audio/Button_SFX/Click/Light Click B_Stop.wav")
-    sfx_writing = Path("assets/audio/Writing_SFX/ui_menu_button_beep_08.wav")
-    sfx_reading_complete = Path(
-        "assets/audio/Reading_Complete_SFX/collect_item_sparkle_pop_03.wav"
-    )
+
+    sfx_word_appear = Path("assets/audio/_UsedSFX/TOON_Pop.wav")
+    sfx_button_hover = Path("assets/audio/_UsedSFX/Bonk Hover A.wav")
+    sfx_button_start_click = Path("assets/audio/_UsedSFX/Light Click A_Start.wav")
+    sfx_button_stop_click = Path("assets/audio/_UsedSFX/Light Click B_Stop.wav")
+    sfx_writing = Path("assets/audio/_UsedSFX/ui_menu_button_beep_08.wav")
+    sfx_reading_complete = Path("assets/audio/_UsedSFX/collect_item_sparkle_pop_03.wav")
 
     # -----------------------------
     # Page Setup
@@ -112,27 +124,47 @@ def main(page: Page) -> None:
     # Reader Logic (ASYNC)
     # -----------------------------
     def reading_completed() -> None:
-        nonlocal is_active, txt_the_word
+        nonlocal is_active, txt_the_word, word_index
         is_active = False
-
+        word_index = 0
         txt_the_word.value = "- THE END -"
         set_btn_visibilities(btn_start=False, btn_stop=False, btn_reset=True)
         playsound(sfx_reading_complete, False)
 
     async def reader_loop():
-        nonlocal word_index, is_active
+        nonlocal base_delay, words, word, word_length, word_index, is_active
 
         while is_active:
             try:
                 playsound(sfx_word_appear, False)
                 txt_the_word.value = words[word_index]
                 page.update()
+
+                if use_smart_pacing:
+                    word = words[word_index]
+                    word_length = len(word)
+
+                    # Length scaling (sub-linear)
+                    length_factor = 1 + (word_length**0.5) * 0.08
+
+                    # Punctuation pauses
+                    punctuation_factor = 1.0
+                    if word.endswith((",", ";", ":", '"', "'", ")", "]", "}")):
+                        punctuation_factor = 1.15
+                    elif word.endswith((".", "!", "?")):
+                        punctuation_factor = 1.35
+
+                    delay = base_delay * length_factor * punctuation_factor
+                else:
+                    delay = base_delay
+
                 word_index += 1
             except Exception:
                 reading_completed()
                 return
 
-            delay = 60 / wpm
+            # print(f"Base Delay: {base_delay}")
+            # print(f"Delay: {delay}")
             await asyncio.sleep(delay)
 
         is_active = False
@@ -186,7 +218,7 @@ def main(page: Page) -> None:
             else:
                 start_reader(ke)
         else:
-            #print(f"UNSIGNED KEY: {ke.key}")
+            # print(f"UNSIGNED KEY: {ke.key}")
             pass
 
     page.on_keyboard_event = keyboard_event
@@ -194,11 +226,11 @@ def main(page: Page) -> None:
     txt_wpm: TextField = TextField()
 
     def wpm_handler(e) -> None:
-        nonlocal wpm
+        nonlocal wpm, base_delay, lower_limit, upper_limit
 
         latest_valid_input = int(wpm or 60)
 
-        print("WPM HANDLER")
+        # print("WPM HANDLER")
         try:
             if str(txt_wpm.value).isdigit():
                 new_wpm = int(txt_wpm.value or 0)
@@ -209,9 +241,6 @@ def main(page: Page) -> None:
             txt_wpm.value = str(latest_valid_input)
             return
 
-        lower_limit = 1
-        upper_limit = 1000
-
         if lower_limit <= new_wpm <= upper_limit:
             wpm = new_wpm
         elif new_wpm < lower_limit:
@@ -219,11 +248,12 @@ def main(page: Page) -> None:
         else:
             wpm = upper_limit
 
+        base_delay = 60 / wpm
         page.update()
 
         if txt_wpm:
             txt_wpm.value = str(wpm)
-        print(f"new WPM: {wpm}")
+        # print(f"new WPM: {wpm}")
 
     def playsound_btn_start_hover(e) -> None:
         playsound(sfx_button_hover, False)
@@ -231,8 +261,18 @@ def main(page: Page) -> None:
     def playsound_btn_stop_hover(e) -> None:
         playsound(sfx_button_hover, False)
 
+    def adjust_use_smart_pace_state(e) -> None:
+        nonlocal switch_smart_pacing, use_smart_pacing
+
+        switch_state = None
+        if switch_smart_pacing:
+            switch_state = switch_smart_pacing.value
+            use_smart_pacing = switch_state
+            print(f"Using Smart Pacing : {use_smart_pacing}")
+
+
     txt_wpm: TextField = TextField(
-        value="100",
+        value=str(wpm),
         text_align=ft.TextAlign.CENTER,
         width=80,
         text_size=20,
@@ -284,7 +324,22 @@ def main(page: Page) -> None:
         visible=False,
     )
 
+    # -----------------------------
+    # Other UI-Elements
+    # -----------------------------
+    tooltip_sp = "Smart Pacing is a Feature that adjusts word render durations to improve reading flow."
+    switch_smart_pacing: Switch = Switch(
+        label="Enable Smart Pacing", 
+        tooltip=tooltip_sp,
+        on_animation_end=adjust_use_smart_pace_state,
+    )
+
+    # -----------------------------
+    # Adding UI-Elements to Page
+    # -----------------------------
+
     page.add(
+        switch_smart_pacing,
         Row(
             [
                 Column(
@@ -303,7 +358,7 @@ def main(page: Page) -> None:
             expand=True,
             alignment=ft.MainAxisAlignment.CENTER,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
-        )
+        ),
     )
 
 
