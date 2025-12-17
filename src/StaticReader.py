@@ -8,6 +8,7 @@ from flet import (
     TextField,
     Text,
     Switch,
+    Slider,
     ElevatedButton,
     FilePicker,
     KeyboardEvent,
@@ -43,7 +44,6 @@ def main(page: Page) -> None:
     # -----------------------------
     # SFX - AUDIO
     # -----------------------------
-
     sfx_word_appear = Path("assets/audio/_UsedSFX/TOON_Pop.wav")
     sfx_button_hover = Path("assets/audio/_UsedSFX/Bonk Hover A.wav")
     sfx_button_start_click = Path("assets/audio/_UsedSFX/Light Click A_Start.wav")
@@ -58,6 +58,9 @@ def main(page: Page) -> None:
     page.theme_mode = ft.ThemeMode.DARK
     page.vertical_alignment = ft.MainAxisAlignment.CENTER
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+    page.window.frameless = False
+    page.window.shadow = True
+    # page.window.full_screen = True
 
     text_color = "ORANGE"
 
@@ -145,14 +148,14 @@ def main(page: Page) -> None:
                     word_length = len(word)
 
                     # Length scaling (sub-linear)
-                    length_factor = 1 + (word_length**0.5) * 0.08
+                    length_factor = 0.7 + (word_length**0.66) * 0.14
 
                     # Punctuation pauses
                     punctuation_factor = 1.0
                     if word.endswith((",", ";", ":", '"', "'", ")", "]", "}")):
-                        punctuation_factor = 1.15
+                        punctuation_factor = 1.225
                     elif word.endswith((".", "!", "?")):
-                        punctuation_factor = 1.35
+                        punctuation_factor = 1.375
 
                     delay = base_delay * length_factor * punctuation_factor
                 else:
@@ -226,11 +229,10 @@ def main(page: Page) -> None:
     txt_wpm: TextField = TextField()
 
     def wpm_handler(e) -> None:
-        nonlocal wpm, base_delay, lower_limit, upper_limit
+        nonlocal wpm, base_delay, lower_limit, upper_limit, slider_wpm
 
         latest_valid_input = int(wpm or 60)
 
-        # print("WPM HANDLER")
         try:
             if str(txt_wpm.value).isdigit():
                 new_wpm = int(txt_wpm.value or 0)
@@ -249,11 +251,41 @@ def main(page: Page) -> None:
             wpm = upper_limit
 
         base_delay = 60 / wpm
-        page.update()
 
         if txt_wpm:
             txt_wpm.value = str(wpm)
-        # print(f"new WPM: {wpm}")
+        if slider_wpm:
+            #slider_wpm.label = str(wpm)
+            slider_wpm.value = wpm
+
+        page.update()
+
+
+    def slider_wpm_handler(e) -> None:
+        nonlocal wpm, txt_wpm, base_delay, lower_limit, upper_limit, slider_wpm
+        try:
+            if slider_wpm:
+                new_wpm = int(slider_wpm.value)
+            else:
+                raise ValueError
+        except (ValueError, TypeError) as e:
+            print(f"ERROR: {e}")
+            return
+        if lower_limit <= new_wpm <= upper_limit:
+            wpm = new_wpm
+        elif new_wpm < lower_limit:
+            wpm = lower_limit
+        else:
+            wpm = upper_limit
+        base_delay = 60 / wpm
+
+        if slider_wpm:
+            #slider_wpm.label = str(wpm)
+            pass
+        if txt_wpm:
+            txt_wpm.value = str(wpm)
+
+        page.update()
 
     def playsound_btn_start_hover(e) -> None:
         playsound(sfx_button_hover, False)
@@ -262,14 +294,25 @@ def main(page: Page) -> None:
         playsound(sfx_button_hover, False)
 
     def adjust_use_smart_pace_state(e) -> None:
-        nonlocal switch_smart_pacing, use_smart_pacing
+        nonlocal switch_smart_pacing, use_smart_pacing, label_smart_pacing
 
         switch_state = None
         if switch_smart_pacing:
             switch_state = switch_smart_pacing.value
             use_smart_pacing = switch_state
-            print(f"Using Smart Pacing : {use_smart_pacing}")
+            # print(f"Using Smart Pacing : {use_smart_pacing}")
 
+            """
+            label_smart_pacing.value = (
+                "Smart Pacing | Enabled"
+                if use_smart_pacing
+                else "Smart Pacing | Disabled"
+            )
+            """
+
+            label_smart_pacing.color = "#8CE4FF" if use_smart_pacing else "#7C7C7C"
+
+            page.update()
 
     txt_wpm: TextField = TextField(
         value=str(wpm),
@@ -277,9 +320,27 @@ def main(page: Page) -> None:
         width=80,
         text_size=20,
         hint_text="WPM",
+        border_width=1,
+        border_radius=7,
+        border_color="RED",
+        color="WHITE",
+        cursor_color="RED",
         on_submit=wpm_handler,
         # on_change=wpm_handler,
         on_tap_outside=wpm_handler,
+    )
+
+    slider_wpm: Slider = Slider(
+        value=wpm,
+        min=lower_limit,
+        max=upper_limit,
+        width=333,
+        thumb_color="WHITE",
+        active_color="RED",
+        inactive_color="#470000",
+        #divisions=int(upper_limit/10),
+        #label=str(wpm),
+        on_change=slider_wpm_handler,
     )
 
     # -----------------------------
@@ -300,7 +361,7 @@ def main(page: Page) -> None:
         width=80,
         color=text_color,
         on_click=start_reader,
-        #on_hover=playsound_btn_start_hover,
+        # on_hover=playsound_btn_start_hover,
         visible=False,
     )
 
@@ -310,7 +371,7 @@ def main(page: Page) -> None:
         width=80,
         color="BLUE",
         on_click=reset_reader,
-        #on_hover=playsound_btn_start_hover,
+        # on_hover=playsound_btn_start_hover,
         visible=False,
     )
 
@@ -320,7 +381,7 @@ def main(page: Page) -> None:
         width=80,
         color="RED",
         on_click=stop_reader,
-        #on_hover=playsound_btn_stop_hover,
+        # on_hover=playsound_btn_stop_hover,
         visible=False,
     )
 
@@ -328,8 +389,16 @@ def main(page: Page) -> None:
     # Other UI-Elements
     # -----------------------------
     tooltip_sp = "Smart Pacing is a Feature that adjusts word render durations to improve reading flow."
+
+    label_smart_pacing: Text = Text(
+        value="Smart Pacing",
+        tooltip=tooltip_sp,
+        size=25,
+        color="#7C7C7C",
+    )
+
     switch_smart_pacing: Switch = Switch(
-        label="Enable Smart Pacing", 
+        # label="Enable Smart Pacing",
         label_position=ft.LabelPosition.LEFT,
         tooltip=tooltip_sp,
         on_animation_end=adjust_use_smart_pace_state,
@@ -341,12 +410,14 @@ def main(page: Page) -> None:
     # -----------------------------
 
     page.add(
+        label_smart_pacing,
         switch_smart_pacing,
         Row(
             [
                 Column(
                     [
                         txt_wpm,
+                        slider_wpm,
                         txt_the_word,
                         import_button,
                         btn_start,
