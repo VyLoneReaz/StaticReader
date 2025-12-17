@@ -111,7 +111,7 @@ def main(page: Page) -> None:
             words = text.split()
             word_index = 0
             txt_the_word.value = f"Loaded {len(words)} words"
-            set_btn_visibilities(btn_stop=False, btn_start=True, btn_restart=False)
+            set_btn_visibilities(btn_stop=False, btn_start=True, btn_reset=False)
         except Exception as ex:
             txt_the_word.value = str(ex)
 
@@ -300,7 +300,7 @@ def main(page: Page) -> None:
         width=80,
         color=text_color,
         on_click=start_reader,
-        on_hover=playsound_btn_start_hover,
+        #on_hover=playsound_btn_start_hover,
         visible=False,
     )
 
@@ -310,7 +310,7 @@ def main(page: Page) -> None:
         width=80,
         color="BLUE",
         on_click=reset_reader,
-        on_hover=playsound_btn_start_hover,
+        #on_hover=playsound_btn_start_hover,
         visible=False,
     )
 
@@ -320,7 +320,7 @@ def main(page: Page) -> None:
         width=80,
         color="RED",
         on_click=stop_reader,
-        on_hover=playsound_btn_stop_hover,
+        #on_hover=playsound_btn_stop_hover,
         visible=False,
     )
 
@@ -330,8 +330,10 @@ def main(page: Page) -> None:
     tooltip_sp = "Smart Pacing is a Feature that adjusts word render durations to improve reading flow."
     switch_smart_pacing: Switch = Switch(
         label="Enable Smart Pacing", 
+        label_position=ft.LabelPosition.LEFT,
         tooltip=tooltip_sp,
         on_animation_end=adjust_use_smart_pace_state,
+        on_change=adjust_use_smart_pace_state,
     )
 
     # -----------------------------
