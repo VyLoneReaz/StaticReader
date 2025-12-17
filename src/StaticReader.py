@@ -36,13 +36,13 @@ def main(page: Page) -> None:
     # -----------------------------
     # Smart Pacing
     # -----------------------------
-    use_smart_pacing = True
+    use_smart_pacing = False
     base_delay = 60 / wpm
     word = None
     word_length = None
 
     # -----------------------------
-    # SFX - AUDIO
+    # SFX - Audio
     # -----------------------------
     sfx_word_appear = Path("assets/audio/_UsedSFX/TOON_Pop.wav")
     sfx_button_hover = Path("assets/audio/_UsedSFX/Bonk Hover A.wav")
@@ -166,8 +166,6 @@ def main(page: Page) -> None:
                 reading_completed()
                 return
 
-            # print(f"Base Delay: {base_delay}")
-            # print(f"Delay: {delay}")
             await asyncio.sleep(delay)
 
         is_active = False
@@ -179,12 +177,11 @@ def main(page: Page) -> None:
             return
 
         set_btn_visibilities(btn_start=False, btn_stop=True, btn_reset=True)
-
         playsound(sfx_button_start_click, False)
 
         is_active = True
-        page.update()
 
+        page.update()
         page.run_task(reader_loop)
 
     def reset_reader(e):
@@ -194,17 +191,16 @@ def main(page: Page) -> None:
         word_index = 0
         txt_the_word.value = "Static Reader"
         set_btn_visibilities(btn_start=True, btn_stop=False, btn_reset=False)
-
         playsound(sfx_button_start_click, False)
 
     def stop_reader(e):
         nonlocal is_active
 
         set_btn_visibilities(btn_start=True, btn_stop=False)
-
         playsound(sfx_button_stop_click, False)
 
         is_active = False
+        
         page.update()
 
     # ------------------------------
