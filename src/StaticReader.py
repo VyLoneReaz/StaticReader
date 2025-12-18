@@ -38,11 +38,13 @@ def main(page: Page) -> None:
     # -----------------------------
     # App State
     # -----------------------------
-    words: list[str] = []
+    words = []
     word_index = 0
     is_active = False
     is_file_valid = False
     show_ui = True
+    is_shift_pressed = False
+    is_ctrl_pressed = False
 
     # -----------------------------
     # Reading Speed [WPM] (Properties)
@@ -131,24 +133,25 @@ def main(page: Page) -> None:
     # File Import Logic
     # -----------------------------
     def import_file(path: str) -> str:
-        nonlocal is_file_valid
+        nonlocal is_file_valid, txt_show_ui_info
 
         file_path = Path(path)
         suffix = file_path.suffix.lower()
 
         if suffix == ".txt":
-            is_file_valid = True
+            # is_file_valid = True
+
             return file_path.read_text(encoding="utf-8", errors="ignore")
 
         if suffix == ".docx":
             doc = Document(str(file_path))
-            is_file_valid = True
+            # is_file_valid = True
             return "\n".join(p.text for p in doc.paragraphs)
 
         raise ValueError(f"Unsupported file type: {suffix}")
 
     def on_file_picked(e: ft.FilePickerResultEvent):
-        nonlocal words, word_index
+        nonlocal words, word_index, is_file_valid
 
         if not e.files:
             return
@@ -158,11 +161,15 @@ def main(page: Page) -> None:
             text = import_file(e.files[0].path)
             words = text.split()
             word_index = 0
+            is_file_valid = True
+            show_ui_info(e)
             txt_the_word.value = f"Loaded {len(words)} words"
             if show_ui:
                 set_btn_visibilities(btn_stop=False, btn_start=True, btn_reset=False)
         except Exception as ex:
             txt_the_word.value = str(ex)
+            is_file_valid = False
+            hide_ui_info(e)
 
         page.update()
 
@@ -249,9 +256,9 @@ def main(page: Page) -> None:
     def reset_reader(e):
         nonlocal words, word_index, txt_the_word
 
-        stop_reader(e)
         word_index = 0
         txt_the_word.value = "Static Reader"
+        stop_reader(e)
         if show_ui:
             set_btn_visibilities(btn_start=True, btn_stop=False, btn_reset=False)
         play_sfx(sfx_button_start_click)
@@ -271,15 +278,14 @@ def main(page: Page) -> None:
     # Input Handling
     # ------------------------------
     def keyboard_event(ke: KeyboardEvent) -> None:
-        nonlocal is_active
+        nonlocal is_active, is_shift_pressed, is_ctrl_pressed
 
         play_sfx(sfx_writing)
+        is_shift_pressed = ke.shift
+        is_ctrl_pressed = ke.ctrl
 
         if ke.key == " ":
-            if is_active:
-                stop_reader(ke)
-            else:
-                start_reader(ke)
+            stop_reader(ke) if is_active else start_reader(ke)
         elif ke.key.lower() == "i":
             file_picker.pick_files(
                 allow_multiple=False,
@@ -293,6 +299,10 @@ def main(page: Page) -> None:
             toggle_mute_audio(ke)
         elif ke.key.lower() == "h":
             toggle_show_ui()
+        elif ke.key.lower() == "a":  # Decrease WPM
+            adjust_wpm(False, is_shift_pressed, is_ctrl_pressed)
+        elif ke.key.lower() == "d":  # increase WPM
+            adjust_wpm(True, is_shift_pressed, is_ctrl_pressed)
         else:
             # print(f"UNSIGNED KEY: {ke.key}")
             pass
@@ -340,6 +350,38 @@ def main(page: Page) -> None:
 
         page.update()
 
+    def adjust_wpm(increase: bool, use_macro=False, use_micro=False) -> None:
+        nonlocal wpm, lower_limit, upper_limit, slider_wpm
+
+        new_wpm = wpm
+        adjust_factor = 10
+
+        if use_macro:
+            adjust_factor = 100
+        elif use_micro:
+            adjust_factor = 1
+
+        if increase:
+            new_wpm += adjust_factor
+        else:
+            new_wpm -= adjust_factor
+
+        if lower_limit <= new_wpm <= upper_limit:
+            wpm = new_wpm
+        elif new_wpm < lower_limit:
+            wpm = lower_limit
+        else:
+            wpm = upper_limit
+
+        if txt_wpm:
+            txt_wpm.value = str(wpm)
+        if slider_wpm:
+            # slider_wpm.label = str(wpm)
+            slider_wpm.value = wpm
+
+        page.update()
+        wpm_handler(e=KeyboardEvent)
+
     def slider_wpm_handler(e) -> None:
         nonlocal wpm, txt_wpm, base_delay, lower_limit, upper_limit, slider_wpm
         try:
@@ -370,26 +412,18 @@ def main(page: Page) -> None:
         if ce.data == "true":
             play_sfx(sfx_button_hover)
 
-    def adjust_use_smart_pace_state(e, *args) -> None:
+    def adjust_use_smart_pace_state(e, state=None) -> None:
         nonlocal switch_smart_pacing, use_smart_pacing, label_smart_pacing
 
-        if args:
-            switch_smart_pacing.value = args[0]
+        try:
+            if state is not None:
+                switch_smart_pacing.value = bool(state)
+        except ValueError as e:
+            print(f"Valueerror: {e}")
 
         if switch_smart_pacing:
             use_smart_pacing = switch_smart_pacing.value
-            # print(f"Using Smart Pacing : {use_smart_pacing}")
-
-            """
-            label_smart_pacing.value = (
-                "Smart Pacing | Enabled"
-                if use_smart_pacing
-                else "Smart Pacing | Disabled"
-            )
-            """
-
             label_smart_pacing.color = "#8CE4FF" if use_smart_pacing else "#7C7C7C"
-
             page.update()
 
     def toggle_show_ui() -> None:
@@ -403,20 +437,31 @@ def main(page: Page) -> None:
             btn_stop, \
             import_button, \
             btn_toggle_mute_audio, \
-            show_ui
+            show_ui, \
+            is_active
 
-        show_ui = not show_ui
+        if is_file_valid:
+            show_ui = not show_ui
 
-        label_smart_pacing.visible = show_ui
-        switch_smart_pacing.visible = show_ui
-        txt_wpm.visible = show_ui
-        slider_wpm.visible = show_ui
-        btn_reset.visible = show_ui
-        btn_start.visible = show_ui
-        btn_stop.visible = show_ui
-        import_button.visible = show_ui
-        btn_toggle_mute_audio.visible = show_ui
-        page.update()
+            label_smart_pacing.visible = show_ui
+            switch_smart_pacing.visible = show_ui
+            txt_wpm.visible = show_ui
+            slider_wpm.visible = show_ui
+            import_button.visible = show_ui
+            btn_toggle_mute_audio.visible = show_ui
+
+            if show_ui:
+                set_btn_visibilities(
+                    btn_stop=is_active,
+                    btn_start=not is_active,
+                    btn_reset=not bool(word_index == 0),
+                )
+            else:
+                btn_reset.visible = show_ui
+                btn_start.visible = show_ui
+                btn_stop.visible = show_ui
+
+            page.update()
 
     txt_wpm: TextField = TextField(
         value=str(wpm),
@@ -530,15 +575,16 @@ def main(page: Page) -> None:
     gesture_detector = ft.GestureDetector(
         on_tap=mouse_tap_event,
         on_secondary_tap=mouse_tap_event,
-        #on_pan_start=show_ui_info,
-        #on_pan_end=hide_ui_info,
+        # on_pan_start=show_ui_info,
+        # on_pan_end=hide_ui_info,
         content=ft.Container(),  # size comes from Stack
     )
 
     txt_show_ui_info: Text = Text(
-        value="Press 'H' to toggle UI", 
-        size=10, 
-        color="#444444"
+        value="Press 'H' to toggle UI",
+        size=10,
+        color="#444444",
+        visible=False,
     )
 
     # -----------------------------
