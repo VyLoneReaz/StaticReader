@@ -45,6 +45,8 @@ def main(page: Page) -> None:
     show_ui = True
     is_shift_pressed = False
     is_ctrl_pressed = False
+    is_reading_complete = False
+    reader_task = None
 
     # -----------------------------
     # Reading Speed [WPM] (Properties)
@@ -180,8 +182,9 @@ def main(page: Page) -> None:
     # Reader Logic (ASYNC)
     # -----------------------------
     def reading_completed() -> None:
-        nonlocal is_active, txt_the_word, word_index
+        nonlocal is_active, txt_the_word, word_index, is_reading_complete
         is_active = False
+        is_reading_complete = True
         word_index = 0
         txt_the_word.value = "- THE END -"
         if show_ui:
@@ -201,61 +204,77 @@ def main(page: Page) -> None:
             AVG_WORD_LEN, \
             LENGTH_WEIGHT, \
             MIN_FACTOR
+        
+        try:
+            while is_active:
+                try:
+                    play_sfx(sfx_word_appear)
 
-        while is_active:
-            try:
-                play_sfx(sfx_word_appear)
-                txt_the_word.value = words[word_index]
-                page.update()
+                    txt_the_word.value = words[word_index]
+                    page.update()
 
-                if use_smart_pacing:
-                    word = words[word_index]
-                    word_length = len(word)
+                    if use_smart_pacing:
+                        word = words[word_index]
+                        word_length = len(word)
 
-                    length_factor = (
-                        1.0
-                        + ((word_length - AVG_WORD_LEN) / AVG_WORD_LEN) * LENGTH_WEIGHT
-                    )
-                    length_factor = max(MIN_FACTOR, length_factor)
+                        length_factor = (
+                            1.0 + ((word_length - AVG_WORD_LEN) / AVG_WORD_LEN) * LENGTH_WEIGHT
+                        )                        
+                        length_factor = max(MIN_FACTOR, length_factor)
 
-                    # Punctuation pauses
-                    punctuation_factor = 1.0
-                    if word.endswith((",", ";", ":", '"', "'", ")", "]", "}")):
-                        punctuation_factor = 1.225
-                    elif word.endswith((".", "!", "?")):
-                        punctuation_factor = 1.375
+                        # Punctuation pauses
+                        punctuation_factor = 1.0
+                        if word.endswith((",", ";", ":", '"', "'", ")", "]", "}")):
+                            punctuation_factor = 1.225
+                        elif word.endswith((".", "!", "?")):
+                            punctuation_factor = 1.375
 
-                    delay = base_delay * length_factor * punctuation_factor
-                else:
-                    delay = base_delay
+                        delay = base_delay * length_factor * punctuation_factor
+                    else:
+                        delay = base_delay
 
-                word_index += 1
-            except Exception:
-                reading_completed()
-                return
+                    word_index += 1
 
-            await asyncio.sleep(delay)
+                    await asyncio.sleep(delay)
+
+                    if word_index >= len(words):
+                        reading_completed()
+                        return
+
+                except Exception:
+                    reading_completed()
+                    return
+
+                # await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            # Expected and clean
+            return
 
         is_active = False
 
     def start_reader(e):
-        nonlocal is_active
+        nonlocal is_active, reader_task
 
         if not words or is_active:
             return
 
-        if show_ui:
-            set_btn_visibilities(btn_start=False, btn_stop=True, btn_reset=True)
-        play_sfx(sfx_button_start_click)
+        if reader_task and not reader_task.done():
+            reader_task.cancel()
 
         is_active = True
 
+        if show_ui:
+            set_btn_visibilities(btn_start=False, btn_stop=True, btn_reset=True)
+
+        play_sfx(sfx_button_start_click)
+
         page.update()
-        page.run_task(reader_loop)
+        reader_task = page.run_task(reader_loop)
 
     def reset_reader(e):
-        nonlocal words, word_index, txt_the_word
+        nonlocal words, word_index, txt_the_word, is_reading_complete
 
+        is_reading_complete = False
         word_index = 0
         txt_the_word.value = "Static Reader"
         stop_reader(e)
@@ -264,14 +283,18 @@ def main(page: Page) -> None:
         play_sfx(sfx_button_start_click)
 
     def stop_reader(e):
-        nonlocal is_active
-
-        if show_ui:
-            set_btn_visibilities(btn_start=True, btn_stop=False)
-        play_sfx(sfx_button_stop_click)
+        nonlocal is_active, reader_task
 
         is_active = False
 
+        if reader_task and not reader_task.done():
+            reader_task.cancel()
+            reader_task = None
+
+        if show_ui:
+            set_btn_visibilities(btn_start=True, btn_stop=False)
+
+        play_sfx(sfx_button_stop_click)
         page.update()
 
     # ------------------------------
@@ -291,7 +314,7 @@ def main(page: Page) -> None:
                 allow_multiple=False,
                 allowed_extensions=["txt", "docx"],
             )
-        elif ke.key.lower() == "s":
+        elif ke.key.lower() == "q":
             adjust_use_smart_pace_state(ke, not use_smart_pacing)
         elif ke.key.lower() == "r":
             reset_reader(ke)
@@ -299,10 +322,16 @@ def main(page: Page) -> None:
             toggle_mute_audio(ke)
         elif ke.key.lower() == "h":
             toggle_show_ui()
-        elif ke.key.lower() == "a":  # Decrease WPM
+        elif ke.key.lower() == "s":  # Decrease WPM
             adjust_wpm(False, is_shift_pressed, is_ctrl_pressed)
-        elif ke.key.lower() == "d":  # increase WPM
+        elif ke.key.lower() == "w":  # increase WPM
             adjust_wpm(True, is_shift_pressed, is_ctrl_pressed)
+        elif (ke.key.lower() == "a") & (not is_reading_complete):  # Go Back
+            stop_reader(ke)
+            move_word_pos(True, is_shift_pressed, is_ctrl_pressed)
+        elif (ke.key.lower() == "d") & (not is_reading_complete):  # Skip
+            stop_reader(ke)
+            move_word_pos(False, is_shift_pressed, is_ctrl_pressed)
         else:
             # print(f"UNSIGNED KEY: {ke.key}")
             pass
@@ -381,6 +410,39 @@ def main(page: Page) -> None:
 
         page.update()
         wpm_handler(e=KeyboardEvent)
+
+    def move_word_pos(
+        is_back_direction: bool, use_macro=False, use_micro=False
+    ) -> None:
+        nonlocal word, words, word_index, txt_the_word, is_reading_complete
+        adjust_factor = 2
+        new_index = word_index
+
+        if use_macro:
+            adjust_factor = 6
+        elif use_micro:
+            adjust_factor = 4
+
+        if is_back_direction:
+            if word_index > 0:
+                new_index -= adjust_factor
+        else:
+            if word_index < len(words) - 1:
+                new_index += adjust_factor
+
+        try:
+            if new_index < 0:
+                new_index = 0
+            elif new_index > len(words):
+                new_index = len(words)
+
+            word_index = new_index
+            word = words[word_index]
+        except IndexError as e:
+            print(f"Index Out of Bounds: {e}")
+
+        txt_the_word.value = word
+        page.update()
 
     def slider_wpm_handler(e) -> None:
         nonlocal wpm, txt_wpm, base_delay, lower_limit, upper_limit, slider_wpm
